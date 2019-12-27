@@ -77,17 +77,18 @@ clean_bind <- function(x, y, keep_pen = FALSE) {
   xy_bind$play_type <- as.factor(as.character(xy_bind$play_type))
   xy_bind <- xy_bind %>% 
   # extract passer, rusher, and receiver from desc
-  mutate(passer = ifelse(play_type == "pass",
+  mutate(passer = as.factor(ifelse(play_type == "pass",
                          str_extract(desc, "(?<=\\s)[A-Z][a-z]*\\.\\s?[A-Z][A-z]+(\\s(I{2,3})|(IV))?(?=\\s((pass)|(sack)|(scramble)))"),
-                         NA),
-         rusher = ifelse(play_type == "run",
+                         NA)),
+         rusher = as.factor(ifelse(play_type == "run",
                          str_extract(desc, "(?<=\\s)[A-Z][a-z]*\\.\\s?[A-Z][A-z]+(\\s(I{2,3})|(IV))?(?=\\s((scramble)|(left end)|(left tackle)|(left guard)|(up the middle)|(right guard)|(right tackle)|(right end)))"),
-                         NA),
-         receiver = ifelse(play_type == "pass",
+                         NA)),
+         receiver = as.factor(ifelse(play_type == "pass",
                            str_extract(desc, "(?<=to\\s)[A-Z][a-z]*\\.\\s?[A-Z][A-z]+(\\s(I{2,3})|(IV))?"),
-                           NA),
+                           NA)),
       KC_pos = ifelse(posteam == "KC", "Offense", "Defense"),
-      play = 1)
+      play = 1) %>%
+    mutate(completed_pass = ifelse(incomplete_pass == 0 & pass == 1, 1, 0))
   
   return(xy_bind)
   
@@ -111,7 +112,11 @@ theme_main <- function() {
     
     # facet
     strip.text = element_text(face = "bold"),
-    strip.background = element_rect(color = "black", fill = "white")
+    strip.background = element_rect(color = "black", fill = "white"),
+    
+    # legend
+    legend.key = element_rect(fill = "white"),
+    legend.title = element_text(hjust = 0.5)
   )
     
 }
@@ -165,6 +170,7 @@ df.text <- data.frame(lab.text = c("Run +, Pass -", "Run +, Pass +", "Run -, Pas
 ## Chiefs off epa/play vs def epa/play: 2018 vs. 2019
 # EPA 
 ## Avg. EPA
+## need to figure out what filters analysts are using here
 
 kc_pbp_1819_c %>%
   filter(wp > 0.20 & wp < 0.80) %>% # filtering on competitive plays only
@@ -182,19 +188,95 @@ kc_pbp_1819_c %>%
        y = "Pass EPA/Play",
        title= "KC Pass vs. Rush EPA",
        subtitle = "Through week 16 of 2019",
-       caption = "Data: nflscrapR") +
+       caption = "Data from nflscrapR; Filtered on meaningful plays") +
   geom_text(data = df.text, aes(x, y, label = lab.text), colour = "red") +
   theme_main()
 
 
 # EPA ~ air yards
 
+kc_pbp_1819_c %>%
+  filter((passer == "P.Mahomes" & pass == 1) & !is.na(air_yards)) %>%
+  group_by(season, passer, air_yards) %>%
+  summarize(epa_play = mean(epa),
+            comp_perc = (sum(completed_pass)/sum(pass)),
+            n = n()) %>%
+  ungroup() %>%
+  ggplot(aes(x = air_yards, y = epa_play, col = season)) +
+  geom_smooth(se = FALSE) +
+  geom_point() +
+  labs(x = "Air Yards",
+       y = "EPA/Play",
+       title = "Patrick Mahomes: EPA/Play by Air Yards Attempted",
+       color = "Season") +
+  scale_color_manual(values = c(kc_primary, kc_secondary)) +
+  scale_x_continuous(breaks = c(-10, 0, 10, 20, 30, 40, 50)) +
+  scale_y_continuous(breaks = c(-2, 0, 2, 4, 6, 8)) +
+  theme_main()
+# seems as if Mahomes had slightly more impactful short/intermediate throws in 2018 and df throws in 2019
+# interesting plot, but flawed (no sample size at each air yard)
+
+# summary df: Mahomes pass attempts, air yards
+
+mahomes_db <- kc_pbp_1819_c %>%
+  filter((passer == "P.Mahomes" & pass == 1) & !is.na(air_yards)) %>%
+  group_by(season, passer, air_yards) %>%
+  summarize(epa_play = mean(epa),
+            comp_perc = (sum(completed_pass)/sum(pass)),
+            pass_comps = sum(completed_pass),
+            pass_attempts = n()) %>%
+  ungroup()
+
+# plot EPA/Play by Air Yards Attempted
+mahomes_db %>%
+  ggplot(aes(x = air_yards, y = epa_play, col = season)) +
+  geom_point() +
+  stat_smooth(method = "loess", span = 0.75, se = FALSE) +
+  labs(x = "Air Yards",
+       y = "EPA/Play",
+       title = "Patrick Mahomes: EPA/Play by Air Yards Attempted",
+       color = "Season") +
+  scale_color_manual(values = c(kc_primary, kc_secondary)) +
+  scale_x_continuous(breaks = c(-10, 0, 10, 20, 30, 40, 50)) +
+  scale_y_continuous(breaks = c(-2, 0, 2, 4, 6, 8)) +
+  theme_main()
+
 ## facet by position 
 
 # Mahomes completion % by air yards: "traditional"
+
+mahomes_db %>%
+  ggplot(aes(x = air_yards, y = comp_perc, color = season)) +
+  geom_point() + 
+  stat_smooth(method = "loess", span= 0.75, se = FALSE) +
+  labs(x = "Air Yards",
+       y = "Completion %",
+       title = "Patrick Mahomes: Completion % by Air Yards Attempted",
+       color = "Season") +
+  scale_color_manual(values = c(kc_primary, kc_secondary)) +
+  scale_x_continuous(breaks = c(-10, 0, 10, 20, 30, 40, 50, 60)) +
+  scale_y_continuous(labels = scales::percent) +
+  theme_main()
+
+# color by pass attempts to show flaw of this method
+
+mahomes_db %>%
+  ggplot(aes(x = air_yards, y = comp_perc, color = pass_attempts)) +
+  geom_point() + 
+  # stat_smooth(method = "loess", span= 0.75, se = FALSE) +
+  labs(x = "Air Yards",
+       y = "Completion %",
+       title = "Patrick Mahomes: Completion % by Air Yards Attempted [2018 - 2019 Week 16]",
+       color = "Pass Attempts") +
+  scale_x_continuous(breaks = c(-10, 0, 10, 20, 30, 40, 50, 60)) +
+  scale_y_continuous(labels = scales::percent) +
+  scale_color_continuous(type = "viridis") +
+  theme_main()
 
 
 # Mahomes completion % by air yards: GAM
 ## Mahomes 2018 vs. 2019
 
- 
+
+
+
