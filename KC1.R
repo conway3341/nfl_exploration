@@ -13,8 +13,9 @@ library(ggbeeswarm)
 library(ggrepel)
 library(mgcv)
 
-## pbp_2019 <- read_csv(url("https://github.com/ryurko/nflscrapR-data/raw/master/play_by_play_data/regular_season/reg_pbp_2019.csv"))
-## 
+
+pbp_2019 <- read_csv(url("https://github.com/ryurko/nflscrapR-data/raw/master/play_by_play_data/regular_season/reg_pbp_2019.csv"))
+
 ## kc_2019 <- pbp_2019 %>%
 ##   filter(home_team == "KC" | away_team == "KC")
 
@@ -272,6 +273,36 @@ mahomes_db %>%
   scale_y_continuous(labels = scales::percent) +
   scale_color_continuous(type = "viridis") +
   theme_main()
+
+# pbp data from 2018 - week 
+
+first <- 2018 #first season to grab. min available=2009
+last <- 2019 # most recent season
+
+datalist = list()
+for (yr in first:last) {
+  pbp <- read_csv(url(paste0("https://github.com/ryurko/nflscrapR-data/raw/master/play_by_play_data/regular_season/reg_pbp_", yr, ".csv")))
+  games <- read_csv(url(paste0("https://raw.githubusercontent.com/ryurko/nflscrapR-data/master/games_data/regular_season/reg_games_", yr, ".csv")))
+  pbp <- pbp %>% inner_join(games %>% distinct(game_id, week, season)) %>% select(-fumble_recovery_2_yards)
+  datalist[[yr]] <- pbp # add it to your list
+}
+pbp_18_19 <- dplyr::bind_rows(datalist)
+pbp_missing <- scrape_season_play_by_play(season = c("2019"), type = "reg", weeks = c(13,14,15,16))
+
+# append missing pbp data thru week 16 of 2019
+## runs, passes epa != NA.. removing penalties
+
+pbp_18_19_c <- clean_bind(pbp_18_19, pbp_missing, keep_pen = FALSE)
+
+
+
+# mahomes completion % by air yards: traditional
+## facet 2018-2019 vs. league average
+
+
+
+
+
 
 
 # Mahomes completion % by air yards: GAM
